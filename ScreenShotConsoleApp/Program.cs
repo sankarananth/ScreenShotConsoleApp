@@ -1,80 +1,95 @@
-﻿using ScreenTest;
+﻿using Google.Apis.Auth.OAuth2;
+using Google.Apis.Drive.v3;
+using Google.Apis.Drive.v3.Data;
+using Google.Apis.Services;
+using Google.Apis.Util.Store;
+using ScreenTest;
 using System;
 using System.Collections.Generic;
+using System.Drawing.Imaging;
+using System.IO;
 using System.Linq;
 using System.Text;
-using System.IO;
-using System.Threading.Tasks;
-using Google.Apis.Drive.v3;
-using Google.Apis.Auth.OAuth2;
-using Google.Apis.Util.Store;
 using System.Threading;
-using Google.Apis.Services;
-using Google.Apis.Vision.v1;
+using System.Threading.Tasks;
+using File = Google.Apis.Drive.v3.Data.File;
 
-namespace ScreenShotConsoleApp
+namespace DriveQuickstart
 {
-	class Program
-	{
-        static DirectoryInfo di;
-        static string[] Scopes = { DriveService.Scope.Drive };
-        static string ApplicationName = "Capture Demo";
+    class Program
+    {
+        // If modifying these scopes, delete your previously saved credentials
+        // at ~/.credentials/drive-dotnet-quickstart.json
+        static string[] Scopes = { DriveService.Scope.Drive};
+        static string ApplicationName = "Drive API .NET Quickstart";
+
         static void Main(string[] args)
         {
+            PrintScreen ps = new PrintScreen();
+            ps.CaptureScreenToFile("screen.jpg", ImageFormat.Jpeg);
+            UserCredential credential;
 
-            GoogleCredential credential;
+            using (var stream =
+                new FileStream("credentials.json", FileMode.Open, FileAccess.Read))
+            {
+                // The file token.json stores the user's access and refresh tokens, and is created
+                // automatically when the authorization flow completes for the first time.
+                string credPath = "token.json";
+                credential = GoogleWebAuthorizationBroker.AuthorizeAsync(
+                    GoogleClientSecrets.Load(stream).Secrets,
+                    Scopes,
+                    "user",
+                    CancellationToken.None,
+                    new FileDataStore(credPath, true)).Result;
+                Console.WriteLine("Credential file saved to: " + credPath);
+            }
+            var fileMetadata = new File()
+            {
+                Name = "screenshot.jpg",
+            };
+            FilesResource.CreateMediaUpload request;
+            string path = "C:\\ss\\screen.jpeg";
+           
 
-            credential = GetCredentials();
-
-            di = new DirectoryInfo("C:\\ss");
-                if (!di.Exists) { di.Create(); }
-
-                PrintScreen ps = new PrintScreen();
-                ps.CaptureScreenToFile(di + "\\screen.png", System.Drawing.Imaging.ImageFormat.Png);
+            // Create Drive API service.
             var service = new DriveService(new BaseClientService.Initializer()
             {
                 HttpClientInitializer = credential,
                 ApplicationName = ApplicationName,
             });
-            UploadBasicImage(di+"\\screen.png", service);
 
-
-        }
-        private static void UploadBasicImage(string path, DriveService service)
-        {
-            var fileMetadata = new Google.Apis.Drive.v3.Data.File();
-            fileMetadata.Name = Path.GetFileName(path);
-            fileMetadata.MimeType = "image/jpeg";
-            Google.Apis.Drive.v3.FilesResource.CreateMediaUpload request;
-            using (var stream = new System.IO.FileStream(path, System.IO.FileMode.Open))
+            // Define parameters of request.
+            FilesResource.ListRequest listRequest = service.Files.List();
+            listRequest.PageSize = 10;
+            listRequest.Fields = "nextPageToken, files(id, name)";
+            using (var stream = new System.IO.FileStream(path,
+                                   System.IO.FileMode.Open))
             {
-                request = service.Files.Create(fileMetadata, stream, "image/jpeg");
+                long len=stream.Length;
+                request = service.Files.Create(
+                    fileMetadata, stream, "image/jpeg");
                 request.Fields = "id";
                 request.Upload();
-                 var file = request.ResponseBody;
-
-            Console.WriteLine("File ID: " + file.Id);
             }
+            var response = request.ResponseBody;
+            
 
-           
-
-        }
-        private static GoogleCredential GetCredentials()
-        {
-            GoogleCredential credential;
-
-            using (var stream = new FileStream("My Project-8157d0250f56.json", FileMode.Open, FileAccess.Read))
+            // List files.
+            IList<Google.Apis.Drive.v3.Data.File> files = listRequest.Execute()
+                .Files;
+            Console.WriteLine("Files:");
+            if (files != null && files.Count > 0)
             {
-                string credPath = System.Environment.GetFolderPath(System.Environment.SpecialFolder.Personal);
-
-                credPath = Path.Combine(credPath, ".credentials/drive-dotnet-quickstart.json");
-
-                credential = GoogleCredential.FromStream(stream)
-        .CreateScoped(VisionService.Scope.CloudPlatform);
-                // Console.WriteLine("Credential file saved to: " + credPath);
+                foreach (var file1 in files)
+                {
+                    Console.WriteLine("{0} ({1})", file1.Name, file1.Id);
+                }
             }
-
-            return credential;
+            else
+            {
+                Console.WriteLine("No files found.");
+            }
+            Console.Read();
         }
     }
 }
